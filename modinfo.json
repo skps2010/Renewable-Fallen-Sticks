@@ -1,0 +1,10 @@
+{
+  "type": "code",
+  "modid": "renewablefallensticks",
+  "name": "Renewable Fallen Sticks",
+  "authors": [
+    "skps2010"
+  ],
+  "description": "Regrows fallen sticks around mature trees without tracking individual trees.",
+  "version": "1.0.0"
+}

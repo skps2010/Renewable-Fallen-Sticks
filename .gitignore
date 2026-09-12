@@ -1,0 +1,17 @@
+# Build output
+bin/
+obj/
+
+# Rider/VS/VS Code local files
+.vs/
+.idea/
+*.user
+*.suo
+
+# OS files
+.DS_Store
+
+# Optional packaged binaries at repo root
+RenewableFallenSticks.dll
+
+*.zip
