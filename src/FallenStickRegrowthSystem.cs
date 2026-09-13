@@ -13,20 +13,21 @@ public sealed class FallenStickRegrowthSystem : ModSystem
     private const string ModdataKey = "renewablefallensticks:last-check";
     private const string TreeGroupAttribute = "treeFellingGroupCode";
     private const string TreeSpreadAttribute = "treeFellingGroupSpreadIndex";
-    private const int LoadedChunkCheckIntervalMs = 6000;
+    private const int LoadedChunkCheckIntervalMs = 1000;
 
     private ICoreServerAPI api = null!;
     private RegrowthConfig config = null!;
     private int looseStickId;
     private long tickListenerId;
-    private readonly Dictionary<long, LoadedColumn> loadedColumns = new();
+    private readonly Dictionary<long, LoadedColumn> loadedColumns = [];
+    private readonly Dictionary<(int X, int Y, int Z), bool> treeCache = [];
 
     public override void StartServerSide(ICoreServerAPI api)
     {
         this.api = api;
         config = LoadConfig(api);
         looseStickId = api.World.GetBlock(new AssetLocation("game:loosestick-free"))?.Id ?? 0;
-        api.Logger.Notification(
+        LogNotification(
             "Renewable Fallen Sticks loaded. Check interval: {0} game hours, catch-up limit: {1}.",
             config.CheckIntervalHours,
             config.MaxCatchUpAttempts
@@ -76,6 +77,7 @@ public sealed class FallenStickRegrowthSystem : ModSystem
             config.MaxCatchUpAttempts
         );
 
+        treeCache.Clear();
         IBlockAccessor blockAccessor = api.World.BlockAccessor;
         var random = new LCGRandom();
         long regrowthCycle = (long)Math.Floor(now / config.CheckIntervalHours);
@@ -95,7 +97,7 @@ public sealed class FallenStickRegrowthSystem : ModSystem
                 int centerY = FindSurfaceY(blockAccessor, centerX, centerZ, random);
                 if (centerY < 0)
                 {
-                    api.Logger.Notification(
+                    LogNotification(
                         "Renewable Fallen Sticks attempt {0}/{1}, sample {2}/{3}: position {4}, ?, {5}; no surface found.",
                         attempt + 1,
                         attempts,
@@ -107,7 +109,7 @@ public sealed class FallenStickRegrowthSystem : ModSystem
                     continue;
                 }
 
-                int[,] surfaceHeights = BuildSurfaceHeights(blockAccessor, centerX, centerY, centerZ, random);
+                int[,] surfaceHeights = BuildSurfaceHeights(blockAccessor, centerX, centerY, centerZ);
                 int treeCount = CountTreeBlocks(blockAccessor, centerX, centerZ, surfaceHeights);
 
                 ClimateCondition climate = blockAccessor.GetClimateAt(
@@ -126,7 +128,7 @@ public sealed class FallenStickRegrowthSystem : ModSystem
                 float forestness = localForestDensity * localForestDensity * 4f * (climate.Fertility + 0.25f);
                 int targetSticks = (int)MathF.Round(treeCount * 0.75f * forestness);
                 int currentSticks = CountLooseSticks(blockAccessor, centerX, centerZ, surfaceHeights);
-                api.Logger.Notification(
+                LogNotification(
                     "Renewable Fallen Sticks attempt {0}/{1}, sample {2}/{3}: position {4}, {5}, {6}; trees {7}, fertility {8:0.###}, localForestDensity {9:0.###}, forestness {10:0.###}, targetSticks {11}, currentSticks {12}.",
                     attempt + 1,
                     attempts,
@@ -158,7 +160,7 @@ public sealed class FallenStickRegrowthSystem : ModSystem
             }
         }
 
-        api.Logger.Notification(
+        LogNotification(
             "Renewable Fallen Sticks checked chunk {0}, {1}: elapsed {2:0.##} hours, attempts {3}, spawned {4}, treeSamples {5}.",
             chunkX,
             chunkZ,
@@ -179,11 +181,10 @@ public sealed class FallenStickRegrowthSystem : ModSystem
         base.Dispose();
     }
 
-    private int[,] BuildSurfaceHeights(IBlockAccessor blockAccessor, int centerX, int centerY, int centerZ, IRandom random)
+    private int[,] BuildSurfaceHeights(IBlockAccessor blockAccessor, int centerX, int centerY, int centerZ)
     {
         int size = config.SampleRadius * 2 + 1;
         int[,] heights = new int[size, size];
-        BlockPos pos = new BlockPos(centerX, centerY, centerZ);
 
         for (int dx = -config.SampleRadius; dx <= config.SampleRadius; dx++)
         {
@@ -213,7 +214,7 @@ public sealed class FallenStickRegrowthSystem : ModSystem
             api.WorldManager.MapSizeY - 1
         );
         int y = Math.Clamp(startY, 0, maxY);
-        BlockPos pos = new BlockPos(x, y, z);
+        BlockPos pos = new(x, y, z);
         bool startAir = IsAir(blockAccessor, pos);
 
         if (!startAir && IsAirAbove(blockAccessor, pos)) return y;
@@ -302,7 +303,7 @@ public sealed class FallenStickRegrowthSystem : ModSystem
     private int CountTreeBlocks(IBlockAccessor blockAccessor, int centerX, int centerZ, int[,] surfaceHeights)
     {
         int count = 0;
-        BlockPos pos = new BlockPos(centerX, 0, centerZ);
+        BlockPos pos = new(centerX, 0, centerZ);
 
         for (int dx = -config.SampleRadius; dx <= config.SampleRadius; dx++)
         {
@@ -312,44 +313,53 @@ public sealed class FallenStickRegrowthSystem : ModSystem
                 if (surfaceY < 0) continue;
 
                 pos.Set(centerX + dx, surfaceY + 1, centerZ + dz);
-                if (!IsTreeTrunk(blockAccessor.GetBlock(pos, BlockLayersAccess.Solid))) continue;
-                if (HasLeavesAbove(blockAccessor, pos)) count++;
+                if (IsTree(blockAccessor, pos)) count++;
             }
         }
 
         return count;
     }
 
-    private static bool IsTreeTrunk(Block? block)
+    private bool IsTree(IBlockAccessor blockAccessor, BlockPos pos)
     {
-        if (block == null || block.Attributes == null) return false;
-        string? group = block.Attributes[TreeGroupAttribute]?.AsString();
-        int spreadIndex = block.Attributes[TreeSpreadAttribute]?.AsInt(0) ?? 0;
-        return !string.IsNullOrEmpty(group) && spreadIndex >= 2;
-    }
+        var key = (pos.X, pos.Y, pos.Z);
+        if (treeCache.TryGetValue(key, out bool cached)) return cached;
 
-    private static bool HasLeavesAbove(IBlockAccessor blockAccessor, BlockPos trunkPos)
-    {
-        BlockPos pos = trunkPos.AddCopy(0, 1, 0);
-        for (int dy = 0; dy < 10; dy++)
+        Block block = blockAccessor.GetBlock(pos, BlockLayersAccess.Solid);
+        string? group = block.Attributes?[TreeGroupAttribute]?.AsString();
+        int spreadIndex = block.Attributes?[TreeSpreadAttribute]?.AsInt(0) ?? 0;
+        bool isTree = !string.IsNullOrEmpty(group) && spreadIndex >= 2;
+
+        if (isTree)
         {
-            for (int dx = -2; dx <= 2; dx++)
+            BlockPos leafPos = pos.AddCopy(0, 1, 0);
+            isTree = false;
+
+            for (int dy = 0; dy < 10 && !isTree; dy++)
             {
-                for (int dz = -2; dz <= 2; dz++)
+                for (int dx = -2; dx <= 2 && !isTree; dx++)
                 {
-                    pos.Set(trunkPos.X + dx, trunkPos.Y + dy, trunkPos.Z + dz);
-                    if (blockAccessor.GetBlock(pos, BlockLayersAccess.Solid)?.BlockMaterial == EnumBlockMaterial.Leaves) return true;
+                    for (int dz = -2; dz <= 2; dz++)
+                    {
+                        leafPos.Set(pos.X + dx, pos.Y + dy, pos.Z + dz);
+                        if (blockAccessor.GetBlock(leafPos, BlockLayersAccess.Solid).BlockMaterial == EnumBlockMaterial.Leaves)
+                        {
+                            isTree = true;
+                            break;
+                        }
+                    }
                 }
             }
         }
 
-        return false;
+        treeCache[key] = isTree;
+        return isTree;
     }
 
     private int CountLooseSticks(IBlockAccessor blockAccessor, int centerX, int centerZ, int[,] surfaceHeights)
     {
         int count = 0;
-        BlockPos pos = new BlockPos(centerX, 0, centerZ);
+        BlockPos pos = new(centerX, 0, centerZ);
 
         for (int dx = -config.SampleRadius; dx <= config.SampleRadius; dx++)
         {
@@ -368,7 +378,7 @@ public sealed class FallenStickRegrowthSystem : ModSystem
 
     private bool TryPlaceStick(IBlockAccessor blockAccessor, IRandom random, int centerX, int centerZ, int[,] surfaceHeights)
     {
-        BlockPos floorPos = new BlockPos(centerX, 0, centerZ);
+        BlockPos floorPos = new(centerX, 0, centerZ);
         int spawnRadius = Math.Clamp(config.StickSpawnRadius, 0, config.SampleRadius);
 
         for (int attempt = 0; attempt < 12; attempt++)
@@ -390,7 +400,7 @@ public sealed class FallenStickRegrowthSystem : ModSystem
             blockAccessor.SetBlock(looseStickId, floorPos);
             if (blockAccessor.GetBlock(floorPos, BlockLayersAccess.Solid).Id == looseStickId)
             {
-                api.Logger.Notification(
+                    LogNotification(
                     "Renewable Fallen Sticks: generated loosestick-free at {0}, {1}, {2} (chunk {3}, {4}; sample center {5}, {6}, {7}).",
                     floorPos.X,
                     floorPos.Y,
@@ -413,6 +423,14 @@ public sealed class FallenStickRegrowthSystem : ModSystem
         }
 
         return false;
+    }
+
+    private void LogNotification(string message, params object[] args)
+    {
+        if (config.EnableNotificationLog)
+        {
+            api.Logger.Notification(message, args);
+        }
     }
 
     private static RegrowthConfig LoadConfig(ICoreServerAPI api)
@@ -453,17 +471,10 @@ public sealed class FallenStickRegrowthSystem : ModSystem
         return ((long)chunkX << 32) ^ (uint)chunkZ;
     }
 
-    private sealed class LoadedColumn
+    private sealed class LoadedColumn(int chunkX, int chunkZ, IWorldChunk chunk)
     {
-        public readonly int ChunkX;
-        public readonly int ChunkZ;
-        public readonly IWorldChunk Chunk;
-
-        public LoadedColumn(int chunkX, int chunkZ, IWorldChunk chunk)
-        {
-            ChunkX = chunkX;
-            ChunkZ = chunkZ;
-            Chunk = chunk;
-        }
+        public readonly int ChunkX = chunkX;
+        public readonly int ChunkZ = chunkZ;
+        public readonly IWorldChunk Chunk = chunk;
     }
 }
