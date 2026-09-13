@@ -283,10 +283,10 @@ public sealed class FallenStickRegrowthSystem : ModSystem
         if (block == null || block.Id == 0) return true;
         if (block.BlockMaterial == EnumBlockMaterial.Snow) return true;
         if (block.BlockMaterial == EnumBlockMaterial.Leaves) return true;
-        if (IsTreeTrunk(block)) return true;
+        if (block.BlockMaterial == EnumBlockMaterial.Wood) return true;
+        if (block.BlockMaterial == EnumBlockMaterial.Plant) return true;
 
-        return block.BlockMaterial == EnumBlockMaterial.Plant
-            && (block.CollisionBoxes == null || block.CollisionBoxes.Length == 0);
+        return block.CollisionBoxes == null || block.CollisionBoxes.Length == 0;
     }
 
     private static bool CanReplaceForStick(Block? block)
@@ -369,11 +369,12 @@ public sealed class FallenStickRegrowthSystem : ModSystem
     private bool TryPlaceStick(IBlockAccessor blockAccessor, IRandom random, int centerX, int centerZ, int[,] surfaceHeights)
     {
         BlockPos floorPos = new BlockPos(centerX, 0, centerZ);
+        int spawnRadius = Math.Clamp(config.StickSpawnRadius, 0, config.SampleRadius);
 
         for (int attempt = 0; attempt < 12; attempt++)
         {
-            int x = centerX + random.NextInt(2 * config.SampleRadius + 1) - config.SampleRadius;
-            int z = centerZ + random.NextInt(2 * config.SampleRadius + 1) - config.SampleRadius;
+            int x = centerX + random.NextInt(2 * spawnRadius + 1) - spawnRadius;
+            int z = centerZ + random.NextInt(2 * spawnRadius + 1) - spawnRadius;
             int surfaceY = surfaceHeights[
                 x - centerX + config.SampleRadius,
                 z - centerZ + config.SampleRadius
