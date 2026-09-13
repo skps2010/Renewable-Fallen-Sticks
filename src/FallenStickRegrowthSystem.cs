@@ -394,8 +394,12 @@ public sealed class FallenStickRegrowthSystem : ModSystem
 
             floorPos.Set(x, surfaceY, z);
             Block floor = blockAccessor.GetBlock(floorPos, BlockLayersAccess.Solid);
-            Block above = blockAccessor.GetBlock(floorPos.AddCopy(0, 1, 0), BlockLayersAccess.Solid);
-            if (!MatchesCode(floor, config.StickGroundCodes) || !MatchesCode(above, config.StickReplaceableCodes)) continue;
+            BlockPos abovePos = floorPos.UpCopy();
+            Block above = blockAccessor.GetBlock(abovePos, BlockLayersAccess.Solid);
+            Block aboveFluid = blockAccessor.GetBlock(abovePos, BlockLayersAccess.Fluid);
+            if (!MatchesCode(floor, config.StickGroundCodes)) continue;
+            if (aboveFluid.IsLiquid()) continue;
+            if (above.Id != 0 && !MatchesCode(above, config.StickReplaceableCodes)) continue;
 
             floorPos.Y++;
             blockAccessor.SetBlock(looseStickId, floorPos);
