@@ -4,6 +4,8 @@ Renewable Fallen Sticks makes fallen sticks grow back near mature trees over tim
 
 It works with naturally generated trees and trees grown from saplings. Sticks can regrow while an area is loaded, or when the area is loaded again after some time.
 
+It provides an alternative way to obtain sticks without cutting down trees, helping forests remain natural and preserving them as a renewable source of resources.
+
 ## How it works
 
 At each check, the mod randomly selects a small surface area. This can be a natural surface or ground built by a player.

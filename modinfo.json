@@ -5,6 +5,6 @@
   "authors": [
     "skps2010"
   ],
-  "description": "Regrows fallen sticks around mature trees without tracking individual trees.",
+  "description": "Regrows fallen sticks near mature trees over time, including trees grown from saplings.",
   "version": "1.0.0"
 }
