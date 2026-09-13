@@ -5,6 +5,7 @@ using Vintagestory.API.Common;
 using Vintagestory.API.Config;
 using Vintagestory.API.MathTools;
 using Vintagestory.API.Server;
+using Vintagestory.API.Util;
 
 namespace RenewableFallenSticks;
 
@@ -86,11 +87,10 @@ public sealed class FallenStickRegrowthSystem : ModSystem
         WriteLastCheck(chunk, now);
 
         int spawned = 0;
-        int maxSpawned = config.MaxSticksPerAttempt * attempts;
         int treeSamples = 0;
-        for (int attempt = 0; attempt < attempts && spawned < maxSpawned; attempt++)
+        for (int attempt = 0; attempt < attempts; attempt++)
         {
-            for (int sample = 0; sample < config.SamplesPerAttempt && spawned < maxSpawned; sample++)
+            for (int sample = 0; sample < config.SamplesPerAttempt && spawned < config.MaxSticksPerAttempt; sample++)
             {
                 int centerX = chunkX * GlobalConstants.ChunkSize + random.NextInt(GlobalConstants.ChunkSize);
                 int centerZ = chunkZ * GlobalConstants.ChunkSize + random.NextInt(GlobalConstants.ChunkSize);
@@ -151,7 +151,7 @@ public sealed class FallenStickRegrowthSystem : ModSystem
                     Math.Max(0, targetSticks - currentSticks)
                 );
 
-                while (missing > 0 && spawned < maxSpawned)
+                while (missing > 0 && spawned < config.MaxSticksPerAttempt)
                 {
                     if (!TryPlaceStick(blockAccessor, random, centerX, centerZ, surfaceHeights)) break;
                     missing--;
@@ -185,7 +185,6 @@ public sealed class FallenStickRegrowthSystem : ModSystem
     {
         int size = config.SampleRadius * 2 + 1;
         int[,] heights = new int[size, size];
-
         for (int dx = -config.SampleRadius; dx <= config.SampleRadius; dx++)
         {
             for (int dz = -config.SampleRadius; dz <= config.SampleRadius; dz++)
@@ -290,14 +289,16 @@ public sealed class FallenStickRegrowthSystem : ModSystem
         return block.CollisionBoxes == null || block.CollisionBoxes.Length == 0;
     }
 
-    private static bool CanReplaceForStick(Block? block)
+    private static bool MatchesCode(Block? block, string[] patterns)
     {
-        if (block == null || block.Id == 0) return true;
-        if (block.BlockMaterial == EnumBlockMaterial.Snow) return true;
-
+        if (block == null) return false;
         string path = block.Code?.Path ?? "";
-        return block.BlockMaterial == EnumBlockMaterial.Plant
-            && path.Contains("grass", StringComparison.OrdinalIgnoreCase);
+        foreach (string pattern in patterns)
+        {
+            if (WildcardUtil.Match(pattern, path)) return true;
+        }
+
+        return false;
     }
 
     private int CountTreeBlocks(IBlockAccessor blockAccessor, int centerX, int centerZ, int[,] surfaceHeights)
@@ -394,7 +395,7 @@ public sealed class FallenStickRegrowthSystem : ModSystem
             floorPos.Set(x, surfaceY, z);
             Block floor = blockAccessor.GetBlock(floorPos, BlockLayersAccess.Solid);
             Block above = blockAccessor.GetBlock(floorPos.AddCopy(0, 1, 0), BlockLayersAccess.Solid);
-            if (floor?.BlockMaterial != EnumBlockMaterial.Soil || !CanReplaceForStick(above)) continue;
+            if (!MatchesCode(floor, config.StickGroundCodes) || !MatchesCode(above, config.StickReplaceableCodes)) continue;
 
             floorPos.Y++;
             blockAccessor.SetBlock(looseStickId, floorPos);
