@@ -14,6 +14,8 @@ The mod counts the trees in that area. A tree is a naturally generated log with 
 
 Forest density, tree count, and soil fertility are used to estimate how many fallen sticks the area should contain. If the existing number of sticks is below that target, the mod generates more sticks there.
 
+Read [Technical Details](#technical-details) for more informations.
+
 ## Installation
 
 1. Place `renewablefallensticks.zip` in the server's `Mods` folder.
@@ -79,3 +81,49 @@ Include both forms when needed. For example, `soil-*` matches `soil-medium-norma
 - A mature tree must have nearby leaves to be counted.
 - The mod does not permanently track individual trees.
 - Regrowth is random, so sticks may not appear at every check.
+
+## Technical Details
+
+The local forest density is estimated from the number of trees in the sampled area:
+
+$$
+\text{ForestDensity}
+=
+\sqrt{\frac{\mathrm{TreeAmountInChunk}}{70}}
+$$
+
+`ForestDensity` ranges from `0` to `1`. `Fertility` also ranges from `0` to `1` and comes from the fixed fertility value created during world generation.
+
+The fallen-stick limit is calculated as:
+
+$$
+\text{Forestness}
+=
+\text{ForestDensity}^2
+\times 4
+\times (\text{Fertility}+0.25)
+$$
+
+The maximum number of sticks supported by one tree is then calculated as:
+
+$$
+\text{SticksPerTree}
+=
+\operatorname{Round}(0.75 \times \text{Forestness})
+$$
+
+The area's target is based on the number of trees in the sampled area:
+
+$$
+\text{TargetSticks}
+=
+\operatorname{Round}(\text{TreeCount} \times 0.75 \times \text{Forestness})
+$$
+
+At the maximum values, `Forestness` is `5`, so one tree supports:
+
+```text
+Round(0.75 x 5) = 4 sticks
+```
+
+Under ideal conditions, one mature tree can support up to 4 fallen sticks. Lower forest density or fertility results in fewer sticks.
