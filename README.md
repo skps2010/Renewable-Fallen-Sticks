@@ -87,9 +87,7 @@ Include both forms when needed. For example, `soil-*` matches `soil-medium-norma
 The local forest density is estimated from the number of trees in the sampled area:
 
 $$
-\text{ForestDensity}
-=
-\sqrt{\frac{\mathrm{TreeAmountInChunk}}{70}}
+ForestDensity = \sqrt{\frac{TreeAmountInChunk}{70}}
 $$
 
 `ForestDensity` ranges from `0` to `1`. `Fertility` also ranges from `0` to `1` and comes from the fixed fertility value created during world generation.
@@ -97,27 +95,19 @@ $$
 The fallen-stick limit is calculated as:
 
 $$
-\text{Forestness}
-=
-\text{ForestDensity}^2
-\times 4
-\times (\text{Fertility}+0.25)
+Forestness = ForestDensity^2 \times 4 \times (Fertility + 0.25)
 $$
 
 The maximum number of sticks supported by one tree is then calculated as:
 
 $$
-\text{SticksPerTree}
-=
-\operatorname{Round}(0.75 \times \text{Forestness})
+SticksPerTree = \mathrm{round}(0.75 \times Forestness)
 $$
 
 The area's target is based on the number of trees in the sampled area:
 
 $$
-\text{TargetSticks}
-=
-\operatorname{Round}(\text{TreeCount} \times 0.75 \times \text{Forestness})
+TargetSticks = \mathrm{round}(TreeCount \times 0.75 \times Forestness)
 $$
 
 At the maximum values, `Forestness` is `5`, so one tree supports:
